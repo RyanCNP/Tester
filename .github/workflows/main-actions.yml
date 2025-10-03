@@ -16,48 +16,76 @@ jobs:
         with:
           fetch-depth: 0
 
-      # --- Configuração Node.js ---
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
-
-      # --- Instala dependências ---
+      # --- Instalar dependências ---
       - name: Instalar dependências
         run: npm ci
 
-      # --- Build do projeto ---
-      - name: Build
-        run: npm run build
-
-      # --- Testes automatizados ---
-      - name: Testes
-        run: npm test -- --coverage
-
-      # --- Instala semver ---
+      # --- Instalar semver ---
       - name: Instalar semver
         run: npm install -g semver
 
-      # --- Calcular nova versão com base nos commits ---
+      # --- Criar nova tag inicial caso não exista ---
+      - name: Criar nova tag caso não exista
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          if [ -z "$(git tag --list)" ]; then
+            git config --global user.name 'github-actions'
+            git config --global user.email 'github-actions@github.com'
+            git tag -a v0.0.0 -m "Initial release"
+            git push origin v0.0.0
+          else
+            echo "Tag v0.0.0 já existe - nenhuma ação necessária."
+          fi
+
+      # --- Calcular nova versão semântica ---
       - name: Calcular nova versão
         id: version
+        shell: bash
         run: |
           set -euo pipefail
+
+          # Atualiza tags do repositório
           git fetch --tags --force --prune
 
-          # Última tag
-          LAST_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || echo "v0.0.0")
+          # 1) Se o HEAD já possui tag semântica, reaproveita
+          EXISTING_TAG=$(git tag --points-at HEAD | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
+          if [ -n "${EXISTING_TAG:-}" ]; then
+            echo "Reexecução detectada: usando tag existente $EXISTING_TAG"
+            VERSION="${EXISTING_TAG#v}"
+            {
+              echo "should_deploy=false"
+              echo "current_version=$VERSION"
+              echo "new_version=$VERSION"
+            } >> "$GITHUB_OUTPUT"
+            echo "NEW_VERSION=$VERSION" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          echo "Nenhuma tag semântica no HEAD. Calculando nova versão…"
+
+          # 2) Descobrir a última tag semântica (maior)
+          LAST_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || true)
+          if [ -z "${LAST_TAG:-}" ]; then
+            LAST_TAG="v0.0.0"
+          fi
           echo "Última tag: $LAST_TAG"
 
           CURRENT_VERSION="${LAST_TAG#v}"
-          LOG_RANGE="${LAST_TAG}..HEAD"
 
-          # Coleta commits desde última tag
+          # 3) Coletar commits desde a última tag
+          if [ "$LAST_TAG" = "v0.0.0" ]; then
+            LOG_RANGE=""
+          else
+            LOG_RANGE="${LAST_TAG}..HEAD"
+          fi
+
           mapfile -t COMMITS < <(git log ${LOG_RANGE} --pretty=format:'%s' || true)
+
           echo "Commits desde ${LAST_TAG}:"
           printf ' - %s\n' "${COMMITS[@]:-<nenhum>}"
 
-          # Detecta bump
+          # 4) Detectar nível de bump por convenção de commits
           MAJOR=0; MINOR=0; PATCH=0
           for COMMIT in "${COMMITS[@]:-}"; do
             if [[ "$COMMIT" == *"BREAKING CHANGE"* ]] || [[ "$COMMIT" =~ ^feat!\: ]] || [[ "$COMMIT" =~ \!$ ]]; then
@@ -69,6 +97,7 @@ jobs:
             fi
           done
 
+          # 5) Calcular nova versão com semver
           NEW_VERSION="$CURRENT_VERSION"
           if [[ $MAJOR -eq 1 ]]; then
             NEW_VERSION=$(semver -i major "$CURRENT_VERSION")
@@ -78,33 +107,60 @@ jobs:
             NEW_VERSION=$(semver -i patch "$CURRENT_VERSION")
           fi
 
-          echo "Versão final: $CURRENT_VERSION -> $NEW_VERSION"
-          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          echo "Versões (atual / nova): $CURRENT_VERSION -> $NEW_VERSION"
 
-      # --- Atualizar package.json ---
+          if [ "$CURRENT_VERSION" = "$NEW_VERSION" ]; then
+            echo "Sem mudanças de versão (sem commits feat/fix/! ou BREAKING CHANGE)."
+            {
+              echo "should_deploy=false"
+              echo "current_version=$CURRENT_VERSION"
+              echo "new_version=$CURRENT_VERSION"
+            } >> "$GITHUB_OUTPUT"
+            echo "NEW_VERSION=$CURRENT_VERSION" >> "$GITHUB_ENV"
+          else
+            {
+              echo "should_deploy=true"
+              echo "current_version=$CURRENT_VERSION"
+              echo "new_version=$NEW_VERSION"
+            } >> "$GITHUB_OUTPUT"
+            echo "NEW_VERSION=$NEW_VERSION" >> "$GITHUB_ENV"
+          fi
+      
+      # --- Atualiza package.json com nova versão ---
       - name: Atualizar versão no package.json
-        run: npm version $NEW_VERSION --no-git-tag-version
-
-      # --- Commit e tag da release ---
-      - name: Criar commit e tag
+        if: steps.version.outputs.should_deploy == 'true' && github.ref == 'refs/heads/develop'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ steps.version.outputs.new_version }}
         run: |
+          set -euo pipefail
+          npm version "${NEW_VERSION}" --no-git-tag-version
+          
+      # --- Commit e push do package.json + tag ---
+      - name: Commit e push package/tag
+        if: steps.version.outputs.should_deploy == 'true' && github.ref == 'refs/heads/develop'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+        run: |
+          set -euo pipefail
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.json
-          git commit -m "chore(release): v$NEW_VERSION" || echo "Sem alterações para commitar"
-          git tag "v$NEW_VERSION"
-          git push origin main
-          git push origin "v$NEW_VERSION"
 
-      # --- Criar Release no GitHub ---
-      - name: Criar Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ steps.version.outputs.new_version }}
-          name: "Release v${{ steps.version.outputs.new_version }}"
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Evita falha quando não há mudanças
+          git commit -m "chore(release): version ${NEW_VERSION}" || echo "Nada para commitar"
+
+          # Cria tag apenas se ela ainda não existe
+          if git rev-parse "v${NEW_VERSION}" >/dev/null 2>&1; then
+            echo "Tag v${NEW_VERSION} já existe. Pulando criação."
+          else
+            git tag "v${NEW_VERSION}"
+          fi
+
+          # Push do commit para develop
+          git push origin HEAD:develop
+
+          # Push da tag, se existir localmente
+          if git rev-parse "v${NEW_VERSION}" >/dev/null 2>&1; then
+            git push origin "v${NEW_VERSION}"
+          fi
