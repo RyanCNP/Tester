@@ -27,12 +27,16 @@ jobs:
       # --- Criar nova tag inicial caso não exista ---
       - name: Criar nova tag caso não exista
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           if [ -z "$(git tag --list)" ]; then
             git config --global user.name 'github-actions'
             git config --global user.email 'github-actions@github.com'
+
             git tag -a v0.0.0 -m "Initial release"
+
+            # 🔑 Usa GH_TOKEN para push
+            git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git
             git push origin v0.0.0
           else
             echo "Tag v0.0.0 já existe - nenhuma ação necessária."
@@ -88,16 +92,21 @@ jobs:
         if: steps.version.outputs.should_deploy == 'true'
         run: npm version $NEW_VERSION --no-git-tag-version
 
-      # --- Commit e tag da release ---
+      # --- Commit e criar tag ---
       - name: Commit e criar tag
         if: steps.version.outputs.should_deploy == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          NEW_VERSION: ${{ steps.version.outputs.new_version }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.json
           git commit -m "chore(release): v$NEW_VERSION" || echo "Sem alterações para commitar"
+
+          # 🔑 Usa GH_TOKEN no remote
+          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git
+
           git tag "v$NEW_VERSION"
           git push origin main
           git push origin "v$NEW_VERSION"
