@@ -101,11 +101,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 🔑 Troca o remote ANTES de qualquer push
+          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git
+
           git add package.json
           git commit -m "chore(release): v$NEW_VERSION" || echo "Sem alterações para commitar"
-
-          # 🔑 Usa GH_TOKEN no remote
-          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git
 
           git tag "v$NEW_VERSION"
           git push origin main
