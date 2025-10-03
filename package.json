@@ -1,0 +1,22 @@
+{
+  "name": "tester",
+  "version": "1.0.0",
+  "description": "Este repositório é feito para testar bibliotecas, actions dentre outras funcionalidades.",
+  "homepage": "https://github.com/RyanCNP/Tester#readme",
+  "bugs": {
+    "url": "https://github.com/RyanCNP/Tester/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RyanCNP/Tester.git"
+  },
+  "license": "MIT",
+  "author": "Ryan",
+  "type": "module",
+  "main": "app.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon app.ts",
+    "start": "node app.ts"
+  }
+}
