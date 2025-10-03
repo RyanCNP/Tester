@@ -1,2 +1,5 @@
-const teste = "vY";
-console.log(teste);
+const testVY = "vY";
+
+console.log(testVY);
+
+export default testVY;
