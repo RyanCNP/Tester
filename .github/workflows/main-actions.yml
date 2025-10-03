@@ -16,11 +16,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      # --- Instala dependências ---
+      # --- Instalar dependências ---
       - name: Instalar dependências
         run: npm ci
 
-      # --- Instala semver ---
+      # --- Instalar semver ---
       - name: Instalar semver
         run: npm install -g semver
 
@@ -31,19 +31,16 @@ jobs:
           set -euo pipefail
           git fetch --tags --force --prune
 
-          # Última tag
           LAST_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || echo "v0.0.0")
           echo "Última tag: $LAST_TAG"
 
           CURRENT_VERSION="${LAST_TAG#v}"
           LOG_RANGE="${LAST_TAG}..HEAD"
 
-          # Coleta commits desde última tag
           mapfile -t COMMITS < <(git log ${LOG_RANGE} --pretty=format:'%s' || true)
           echo "Commits desde ${LAST_TAG}:"
           printf ' - %s\n' "${COMMITS[@]:-<nenhum>}"
 
-          # Detecta bump
           MAJOR=0; MINOR=0; PATCH=0
           for COMMIT in "${COMMITS[@]:-}"; do
             if [[ "$COMMIT" == *"BREAKING CHANGE"* ]] || [[ "$COMMIT" =~ ^feat!\: ]] || [[ "$COMMIT" =~ \!$ ]]; then
@@ -65,24 +62,32 @@ jobs:
           fi
 
           echo "Versão final: $CURRENT_VERSION -> $NEW_VERSION"
-          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+
+          # Salva como output para steps seguintes
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
       # --- Atualizar package.json ---
       - name: Atualizar versão no package.json
-        run: npm version $NEW_VERSION --no-git-tag-version
+        run: npm version ${{ steps.version.outputs.new_version }} --no-git-tag-version
 
-      # --- Commit e tag da release ---
+      # --- Commit e push com tag ---
       - name: Criar commit e tag
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.json
-          git commit -m "chore(release): v$NEW_VERSION" || echo "Sem alterações para commitar"
-          git tag "v$NEW_VERSION"
-          git push origin main
-          git push origin "v$NEW_VERSION"
+          git commit -m "chore(release): v${{ steps.version.outputs.new_version }}" || echo "Sem alterações para commitar"
+
+          # Cria tag apenas se ainda não existir
+          if git rev-parse "v${{ steps.version.outputs.new_version }}" >/dev/null 2>&1; then
+            echo "Tag já existe, pulando."
+          else
+            git tag "v${{ steps.version.outputs.new_version }}"
+          fi
+
+          # Push usando token seguro (branch protegida)
+          git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }} HEAD:main
+          git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }} "v${{ steps.version.outputs.new_version }}"
 
       # --- Criar Release no GitHub ---
       - name: Criar Release
@@ -93,4 +98,4 @@ jobs:
           draft: false
           prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
