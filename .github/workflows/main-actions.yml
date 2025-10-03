@@ -1,15 +1,12 @@
 name: Release Main
 
 on:
-  pull_request:
+  push:
     branches:
       - main
-    types: [closed] # Quando a PR for concluida
 
 jobs:
-  release:
-    # --- Somente se a PR for mergeada ---
-    if: github.event.pull_request.merged == true 
+  pipeline:
     runs-on: ubuntu-latest
 
     steps:
