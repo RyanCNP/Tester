@@ -1,14 +1,12 @@
 name: CI / CD - develop (preview)
 
 on:
-  pull_request:
-    branches: [develop]
-    types: [closed] # Quando a PR for concluida
+  push:
+    branches: 
+      - develop
 
 jobs:
   pipelone:
-    # --- Somente se a PR for mergeada ---
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
