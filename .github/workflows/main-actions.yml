@@ -27,7 +27,7 @@ jobs:
       # --- Criar nova tag inicial caso não exista ---
       - name: Criar nova tag caso não exista
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           if [ -z "$(git tag --list)" ]; then
             git config --global user.name 'github-actions'
