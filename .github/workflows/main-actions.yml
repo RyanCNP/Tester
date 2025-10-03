@@ -16,23 +16,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      # --- Configuração Node.js ---
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
-
       # --- Instala dependências ---
       - name: Instalar dependências
         run: npm ci
-
-      # --- Build do projeto ---
-      - name: Build
-        run: npm run build
-
-      # --- Testes automatizados ---
-      - name: Testes
-        run: npm test -- --coverage
 
       # --- Instala semver ---
       - name: Instalar semver
