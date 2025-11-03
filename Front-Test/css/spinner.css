@@ -1,0 +1,61 @@
+body {
+    font-family: "Georgia", serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    background-color: #f4f4f4;
+    color: #333;
+}
+
+h2 {
+    margin-bottom: 20px;
+}
+
+button {
+    padding: 10px 20px;
+    font-size: 1rem;
+    cursor: pointer;
+    border: none;
+    border-radius: 5px;
+    background-color: #4b0082;
+    color: white;
+    transition: background-color 0.3s;
+}
+
+button:hover {
+    background-color: #37125a;
+}
+
+/* Spinner refinado */
+.spinner {
+    display: none;
+    margin-top: 25px;
+    width: 5rem;
+    /* tamanho */
+    height: 5rem;
+    /* tamanho */
+    border: 6px solid rgba(0, 0, 0, 0.15);
+    border-top-color: #ffd700;
+    /* cor principal */
+    border-radius: 50%;
+    animation: spin 0.5s linear infinite;
+    /* velocidade */
+}
+
+.spinner.active {
+    display: inline-block;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(-360deg);
+    }
+}
+
+.mensagem {
+    margin-top: 20px;
+    font-size: 1rem;
+    font-style: italic;
+}
