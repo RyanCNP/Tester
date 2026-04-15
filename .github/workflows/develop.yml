@@ -101,21 +101,37 @@ jobs:
         - name: Renderizar Template HTML
           id: render_html
           run: |
-            # Criamos uma cópia temporária do template
-            cp .github/templates/e-mail.actions.html rendered_email.html
+            node -e "
+              const fs = require('fs');
+              const path = './.github/templates/e-mail.actions.html';
+              
+              if (!fs.existsSync(path)) {
+                console.error('❌ Arquivo não encontrado');
+                process.exit(1);
+              }
 
-            # Substituímos cada marcador exato do seu HTML pelo valor real
-            # Usamos '#' como delimitador no sed porque as URLs contêm '/'
-            sed -i "s#\${{ github.ref_name }}#${{ github.ref_name }}#g" rendered_email.html
-            sed -i "s#\${{ github.repository }}#${{ github.repository }}#g" rendered_email.html
-            sed -i "s#\${{ github.workflow }}#${{ github.workflow }}#g" rendered_email.html
-            sed -i "s#\${{ github.sha }}#$(echo ${{ github.sha }} | cut -c1-7)#g" rendered_email.html
-            sed -i "s#\${{ github.actor }}#${{ github.actor }}#g" rendered_email.html
-            sed -i "s#\${{ github.server_url }}#${{ github.server_url }}#g" rendered_email.html
-            sed -i "s#\${{ github.run_id }}#${{ github.run_id }}#g" rendered_email.html
-            sed -i "s#\${{ github.event.repository.name }}#${{ github.event.repository.name }}#g" rendered_email.html
+              let html = fs.readFileSync(path, 'utf8');
 
-            # Salva o resultado final no output do job
+              // Mapeamento de substituição exata
+              const replacements = {
+                '\\\${{ github.ref_name }}': '${{ github.ref_name }}',
+                '\\\${{ github.repository }}': '${{ github.repository }}',
+                '\\\${{ github.workflow }}': '${{ github.workflow }}',
+                '\\\${{ github.sha }}': '${{ github.sha }}'.substring(0, 7),
+                '\\\${{ github.actor }}': '${{ github.actor }}',
+                '\\\${{ github.server_url }}': '${{ github.server_url }}',
+                '\\\${{ github.run_id }}': '${{ github.run_id }}',
+                '\\\${{ github.event.repository.name }}': '${{ github.event.repository.name }}'
+              };
+
+              for (const [key, value] of Object.entries(replacements)) {
+                html = html.split(key).join(value);
+              }
+
+              fs.writeFileSync('rendered_email.html', html);
+            "
+            
+            # Exporta o conteúdo para o próximo step
             echo "html_body<<EOF" >> $GITHUB_OUTPUT
             cat rendered_email.html >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
