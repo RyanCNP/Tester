@@ -128,7 +128,7 @@ jobs:
       - name: Carregar e processar template
         id: template
         run: |
-          html=$(cat ./.github/email-templates/failure-pipeline.html)
+          html=$(cat .github/workflows/email_template.html)
 
           html="${html//\{\{branch\}\}/${{ steps.info.outputs.branch }}}"
           html="${html//\{\{data\}\}/${{ steps.info.outputs.data }}}"
