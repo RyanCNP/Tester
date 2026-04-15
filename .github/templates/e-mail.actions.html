@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pipeline Status - ${{ github.ref_name }}</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f4f7f4; margin: 0; padding: 0; }
+        .wrapper { width: 100%; padding: 20px 0; }
+        .container { max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #d1dbd1; border-radius: 8px; overflow: hidden; }
+        .header { background-color: #1b4332; color: #ffffff; padding: 25px; text-align: center; }
+        .header h1 { margin: 0; font-size: 20px; letter-spacing: 1px; }
+        
+        /* Badge Dinâmico para Branch */
+        .branch-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-top: 10px;
+            background-color: #40916c; /* Verde médio */
+            color: white;
+        }
+
+        .content { padding: 30px; color: #2d3a3a; }
+        .status-alert { color: #2d6a4f; font-weight: bold; font-size: 18px; margin-bottom: 15px; }
+        
+        .info-table { width: 100%; border-collapse: collapse; margin: 20px 0; background-color: #f9fff9; border-radius: 6px; }
+        .info-table td { padding: 12px; border-bottom: 1px solid #edf5ed; font-size: 14px; }
+        .label { color: #52b788; font-weight: bold; width: 100px; }
+        .mono { font-family: 'SFMono-Regular', Consolas, monospace; background: #f0f4f0; padding: 2px 4px; }
+
+        .btn-wrapper { text-align: center; padding: 20px 0; }
+        .button { background-color: #2d6a4f; color: #ffffff !important; text-decoration: none; padding: 12px 30px; border-radius: 5px; font-weight: bold; display: inline-block; }
+        
+        .footer { background: #f1f8f1; padding: 15px; text-align: center; font-size: 11px; color: #74c69d; }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="container">
+            <div class="header">
+                <h1>FALHA NA EXECUÇÃO</h1>
+                <div class="branch-badge">Ambiente: ${{ github.ref_name }}</div>
+            </div>
+
+            <div class="content">
+                <div class="status-alert">O workflow encontrou um erro.</div>
+                <p>A pipeline foi interrompida durante o processo de CI/CD. Verifique os detalhes abaixo:</p>
+                
+                <table class="info-table">
+                    <tr>
+                        <td class="label">Repositório</td>
+                        <td class="mono">${{ github.repository }}</td>
+                    </tr>
+                    <tr>
+                        <td class="label">Branch</td>
+                        <td class="mono"><strong>${{ github.ref_name }}</strong></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Workflow</td>
+                        <td>${{ github.workflow }}</td>
+                    </tr>
+                    <tr>
+                        <td class="label">Commit</td>
+                        <td class="mono">${{ github.sha }}</td>
+                    </tr>
+                    <tr>
+                        <td class="label">Autor</td>
+                        <td>${{ github.actor }}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="btn-wrapper">
+                <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" class="button">Inspecionar Erro</a>
+            </div>
+
+            <div class="footer">
+                Enviado via GitHub Actions para o repositório ${{ github.event.repository.name }}
+            </div>
+        </div>
+    </div>
+</body>
+</html>
