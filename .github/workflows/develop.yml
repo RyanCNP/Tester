@@ -26,7 +26,7 @@ jobs:
         run: |
           MSG="$(git log -1 --pretty=%s)"
           echo "Mensagem detectada: $MSG"
-          if [[ ! "$MSG" =~ ^(feat|feat!|chore|fix|refactor|docs)(\(.+\))?:|^Merge|^Revert ]]; then
+          if [[ ! "$MSG" =~ ^(feat|feat!|chore|fix|refactor|docs)(\(.+\))?:|^Revert ]]; then
             echo "❌ Mensagem de commit inválida!"
             exit 1
           fi
