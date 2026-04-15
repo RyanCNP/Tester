@@ -1,4 +1,4 @@
-name: CI / CD - Mobile Develop (Preview)
+name: CI / CD - develop (preview)
 
 on:
   push:
@@ -10,142 +10,143 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # --- Checkout do código ---
       - name: Checkout code
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
-      # Configura o Node.js compatível com seu ambiente
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '24.14.0'
-          cache: 'npm'
-
+      # --- Validar mensagem do commit ---
       - name: Validar mensagem do commit
         run: |
           MSG="$(git log -1 --pretty=%s)"
-          echo "Mensagem detectada: $MSG"
-          if [[ ! "$MSG" =~ ^(feat|feat!|chore|fix|refactor|docs)(\(.+\))?:|^Revert ]]; then
-            echo "❌ Mensagem de commit inválida!"
-            exit 1
-          fi
 
-      - name: Instalar Dependências
+          echo "Mensagem detectada: $MSG"
+
+          if [[ ! "$MSG" =~ ^(feat|feat!|chore|fix|refactor|docs)(\(.+\))?:|^Merge|^Revert ]]; then
+            echo "❌ Mensagem de commit inválida!"
+            echo "Use um dos formatos: feat:, feat!:, chore:, fix:, refactor:, docs:"
+            exit 1
+            fi
+
+            echo "✔ Mensagem válida."
+
+      # --- Instalação de dependências ---
+      - name: Dependências
         run: npm install --force
 
-      - name: Instalar Semver Global
+      # --- Instala semver globalmente ---
+      - name: Semver
         run: npm install -g semver
 
+      # --- Calcular nova versão com sufixo preview ---
       - name: Calcular nova versão Preview
         id: version
         run: |
           git fetch --tags --force --prune
+
           LAST_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n1 || echo "v0.0.0")
           CURRENT_VERSION="${LAST_TAG#v}"
-          
-          # Remove sufixos para calcular o próximo patch
-          BASE_VERSION=$(echo $CURRENT_VERSION | cut -d'-' -f1)
-          NEW_PATCH=$(semver -i patch "$BASE_VERSION")
 
-          # Contador de previews para esta versão
-          COUNT=$(git tag --list "v${NEW_PATCH}-preview.*" | wc -l | xargs)
-          PREVIEW_VERSION="v${NEW_PATCH}-preview.$((COUNT+1))"
+          NEW_VERSION=$(semver -i patch "$CURRENT_VERSION")
 
+          # Número do preview (quantas tags preview já existem para essa versão base)
+          COUNT=$(git tag --list "v${NEW_VERSION}-preview.*" | wc -l | xargs)
+          PREVIEW_VERSION="v${NEW_VERSION}-preview.$((COUNT+1))"
+
+          echo "NEW_VERSION=$PREVIEW_VERSION" >> $GITHUB_ENV
           echo "new_version=$PREVIEW_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Criar Release Preview (GitHub)
+      # --- Criar Release Preview ---
+      - name: Criar Release Preview
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.version.outputs.new_version }}
-          name: "Mobile Preview ${{ steps.version.outputs.new_version }}"
+          name: "Preview ${{ steps.version.outputs.new_version }}"
           draft: false
           prerelease: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Atualizar package.json
+      # --- Atualizar e commitar package.json ---
+      - name: Atualizar versão no package.json
         id: update_package
         run: |
+          # Versão atual
           CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "📦 Versão atual no package.json: $CURRENT_VERSION"
+
+          # Incrementa patch
           NEW_VERSION=$(npx semver -i patch "$CURRENT_VERSION")
-          
+          echo "📦 Nova versão: $NEW_VERSION"
+
+          # Atualiza package.json com a nova versão
           node -e "
             const fs = require('fs');
             const pkg = require('./package.json');
             pkg.version = '$NEW_VERSION';
             fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2));
           "
+
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Commit e Push da Versão
+      - name: Commit da nova versão
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Ajusta o remote
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git
+
           git add package.json
-          git commit -m "chore(version): bump to ${{ steps.update_package.outputs.new_version }} [skip ci]" || echo "Sem alterações"
+          git commit -m "chore(version): bump to ${{ steps.update_package.outputs.new_version }}" || echo "Sem alterações para commitar"
           git push origin develop
 
+  # --- Enviar e-mail em caso de falha ---
   notify_failure:
-      name: Notificar Falha
-      needs: pipeline
-      runs-on: ubuntu-latest
-      if: failure()
-      steps:
-        - name: Checkout code
-          uses: actions/checkout@v3
+    name: Notificar Falha
+    needs: pipeline
+    runs-on: ubuntu-latest
+    if: failure()
 
-        - name: Renderizar Template HTML
-          id: render_html
-          run: |
-            node -e "
-              const fs = require('fs');
-              const templatePath = './.github/templates/e-mail.actions.html';
-              
-              if (!fs.existsSync(templatePath)) {
-                console.error('❌ Template não encontrado em: ' + templatePath);
-                process.exit(1);
-              }
+    steps:
+      # --- Checkout do código ---
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-              let html = fs.readFileSync(templatePath, 'utf8');
+      # --- Capturar informações ---
+      - name: Capturar informações
+        id: info
+        run: |
+          echo "data=$(date '+%d/%m/%Y %H:%M:%S')" >> $GITHUB_OUTPUT
+          echo "commit=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+          echo "branch=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          echo "url_logs=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> $GITHUB_OUTPUT
 
-              // Substituições literais baseadas no seu HTML
-              const replacements = {
-                '\${{ github.ref_name }}': '${{ github.ref_name }}',
-                '\${{ github.repository }}': '${{ github.repository }}',
-                '\${{ github.workflow }}': '${{ github.workflow }}',
-                '\${{ github.sha }}': '${{ github.sha }}'.substring(0, 7),
-                '\${{ github.actor }}': '${{ github.actor }}',
-                '\${{ github.server_url }}': '${{ github.server_url }}',
-                '\${{ github.run_id }}': '${{ github.run_id }}',
-                '\${{ github.event.repository.name }}': '${{ github.event.repository.name }}'
-              };
+      - name: Carregar e processar template
+        id: template
+        run: |
+          html=$(cat ./.github/email-templates/failure-pipeline.html)
 
-              Object.entries(replacements).forEach(([key, value]) => {
-                // Usamos split/join para evitar problemas com escape de regex
-                html = html.split(key).join(value);
-              });
+          html="${html//\{\{branch\}\}/${{ steps.info.outputs.branch }}}"
+          html="${html//\{\{data\}\}/${{ steps.info.outputs.data }}}"
+          html="${html//\{\{commit\}\}/${{ steps.info.outputs.commit }}}"
+          html="${html//\{\{url_logs\}\}/${{ steps.info.outputs.url_logs }}}"
 
-              fs.writeFileSync('rendered_email.html', html);
-            "
+          echo "html<<EOF" >> $GITHUB_OUTPUT
+          echo "$html" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-          # Técnica Multi-line segura para o GITHUB_OUTPUT
-          EOF=$(dd if=/dev/urandom bs=15 count=1 2>/dev/null | base64)
-          echo "html_body<<$EOF" >> $GITHUB_OUTPUT
-          cat rendered_email.html >> $GITHUB_OUTPUT
-          echo "$EOF" >> $GITHUB_OUTPUT
-
-        - name: Enviar E-mail de Erro
-          uses: dawidd6/action-send-mail@v3
-          with:
-            server_address: ${{ secrets.MAIL_HOST }}
-            server_port: ${{ secrets.MAIL_PORT }}
-            username: ${{ secrets.MAIL_USER }}
-            password: ${{ secrets.MAIL_PASS }}
-            subject: "🚨 Erro no Build Mobile: ${{ github.repository }} [${{ github.ref_name }}]"
-            to: "${{ secrets.TEAM_EMAILS }}"
-            from: "CI/CD Mobile Monitor <no-reply@seu-dominio.com>"
-            html_body: ${{ steps.render_html.outputs.html_body }}
+      - name: Enviar e-mail aos responsáveis
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_HOST }}
+          server_port: ${{ secrets.MAIL_PORT }}
+          username: ${{ secrets.MAIL_USER }}
+          password: ${{ secrets.MAIL_PASS }}
+          subject: "🚨 Falha no Pipeline - ${{ github.ref_name }}"
+          to: "${{ secrets.TEAM_EMAILS }}"
+          from: "CI/CD SaneaSP <no-reply@saneasp.com>"
+          html_body: ${{ steps.template.outputs.html }}
