@@ -1,0 +1,129 @@
+name: CI / CD - Mobile Develop (Preview)
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      # Configura o Node.js compatível com seu ambiente
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '24.14.0'
+          cache: 'npm'
+
+      - name: Validar mensagem do commit
+        run: |
+          MSG="$(git log -1 --pretty=%s)"
+          echo "Mensagem detectada: $MSG"
+          if [[ ! "$MSG" =~ ^(feat|feat!|chore|fix|refactor|docs)(\(.+\))?:|^Merge|^Revert ]]; then
+            echo "❌ Mensagem de commit inválida!"
+            exit 1
+          fi
+
+      - name: Instalar Dependências
+        run: npm install --force
+
+      - name: Instalar Semver Global
+        run: npm install -g semver
+
+      - name: Calcular nova versão Preview
+        id: version
+        run: |
+          git fetch --tags --force --prune
+          LAST_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n1 || echo "v0.0.0")
+          CURRENT_VERSION="${LAST_TAG#v}"
+          
+          # Remove sufixos para calcular o próximo patch
+          BASE_VERSION=$(echo $CURRENT_VERSION | cut -d'-' -f1)
+          NEW_PATCH=$(semver -i patch "$BASE_VERSION")
+
+          # Contador de previews para esta versão
+          COUNT=$(git tag --list "v${NEW_PATCH}-preview.*" | wc -l | xargs)
+          PREVIEW_VERSION="v${NEW_PATCH}-preview.$((COUNT+1))"
+
+          echo "new_version=$PREVIEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Criar Release Preview (GitHub)
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.new_version }}
+          name: "Mobile Preview ${{ steps.version.outputs.new_version }}"
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Atualizar package.json
+        id: update_package
+        run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          NEW_VERSION=$(npx semver -i patch "$CURRENT_VERSION")
+          
+          node -e "
+            const fs = require('fs');
+            const pkg = require('./package.json');
+            pkg.version = '$NEW_VERSION';
+            fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2));
+          "
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Commit e Push da Versão
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git
+          git add package.json
+          git commit -m "chore(version): bump to ${{ steps.update_package.outputs.new_version }} [skip ci]" || echo "Sem alterações"
+          git push origin develop
+
+  notify_failure:
+      name: Notificar Falha
+      needs: pipeline
+      runs-on: ubuntu-latest
+      if: failure()
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v3
+
+        - name: Renderizar Template HTML
+          id: render_html
+          env:
+            REPO: ${{ github.repository }}
+            BRANCH: ${{ github.ref_name }}
+            WORKFLOW: ${{ github.workflow }}
+            SHA: ${{ github.sha }}
+            ACTOR: ${{ github.actor }}
+            SERVER_URL: ${{ github.server_url }}
+            RUN_ID: ${{ github.run_id }}
+            REPO_NAME: ${{ github.event.repository.name }}
+          run: |
+            envsubst < .github/templates/e-mail.actions.html > rendered_email.html
+            
+            echo "html_body<<EOF" >> $GITHUB_OUTPUT
+            cat rendered_email.html >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+
+        - name: Enviar E-mail de Erro
+          uses: dawidd6/action-send-mail@v3
+          with:
+            server_address: ${{ secrets.MAIL_HOST }}
+            server_port: ${{ secrets.MAIL_PORT }}
+            username: ${{ secrets.MAIL_USER }}
+            password: ${{ secrets.MAIL_PASS }}
+            subject: "🚨 Erro no Build Mobile: ${{ github.repository }} [${{ github.ref_name }}]"
+            to: "${{ secrets.TEAM_EMAILS }}"
+            from: "CI/CD Mobile Monitor <no-reply@seu-dominio.com>"
+            html_body: ${{ steps.render_html.outputs.html_body }}
