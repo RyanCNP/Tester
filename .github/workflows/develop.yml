@@ -103,38 +103,40 @@ jobs:
           run: |
             node -e "
               const fs = require('fs');
-              const path = './.github/templates/e-mail.actions.html';
+              const templatePath = './.github/templates/e-mail.actions.html';
               
-              if (!fs.existsSync(path)) {
-                console.error('❌ Arquivo não encontrado');
+              if (!fs.existsSync(templatePath)) {
+                console.error('❌ Template não encontrado em: ' + templatePath);
                 process.exit(1);
               }
 
-              let html = fs.readFileSync(path, 'utf8');
+              let html = fs.readFileSync(templatePath, 'utf8');
 
-              // Mapeamento de substituição exata
+              // Substituições literais baseadas no seu HTML
               const replacements = {
-                '\\\${{ github.ref_name }}': '${{ github.ref_name }}',
-                '\\\${{ github.repository }}': '${{ github.repository }}',
-                '\\\${{ github.workflow }}': '${{ github.workflow }}',
-                '\\\${{ github.sha }}': '${{ github.sha }}'.substring(0, 7),
-                '\\\${{ github.actor }}': '${{ github.actor }}',
-                '\\\${{ github.server_url }}': '${{ github.server_url }}',
-                '\\\${{ github.run_id }}': '${{ github.run_id }}',
-                '\\\${{ github.event.repository.name }}': '${{ github.event.repository.name }}'
+                '\${{ github.ref_name }}': '${{ github.ref_name }}',
+                '\${{ github.repository }}': '${{ github.repository }}',
+                '\${{ github.workflow }}': '${{ github.workflow }}',
+                '\${{ github.sha }}': '${{ github.sha }}'.substring(0, 7),
+                '\${{ github.actor }}': '${{ github.actor }}',
+                '\${{ github.server_url }}': '${{ github.server_url }}',
+                '\${{ github.run_id }}': '${{ github.run_id }}',
+                '\${{ github.event.repository.name }}': '${{ github.event.repository.name }}'
               };
 
-              for (const [key, value] of Object.entries(replacements)) {
+              Object.entries(replacements).forEach(([key, value]) => {
+                // Usamos split/join para evitar problemas com escape de regex
                 html = html.split(key).join(value);
-              }
+              });
 
               fs.writeFileSync('rendered_email.html', html);
             "
-            
-            # Exporta o conteúdo para o próximo step
-            echo "html_body<<EOF" >> $GITHUB_OUTPUT
-            cat rendered_email.html >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
+
+          # Técnica Multi-line segura para o GITHUB_OUTPUT
+          EOF=$(dd if=/dev/urandom bs=15 count=1 2>/dev/null | base64)
+          echo "html_body<<$EOF" >> $GITHUB_OUTPUT
+          cat rendered_email.html >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
 
         - name: Enviar E-mail de Erro
           uses: dawidd6/action-send-mail@v3
